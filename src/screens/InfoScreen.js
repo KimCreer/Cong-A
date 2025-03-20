@@ -29,7 +29,7 @@ export default function InfoScreen() {
                 <View style={styles.profileSection}>
                     <View style={styles.profileImageContainer}>
                         <Image
-                            source={{ uri: "https://your-image-url.com/jimmy-fresnedi.jpg" }}
+                            source={{ uri: "https://tse2.mm.bing.net/th?id=OIP.99ZQlY1GeOswoUspD-hqsAHaHa&pid=Api" }}
                             style={styles.profileImage}
                         />
                     </View>
@@ -200,7 +200,7 @@ export default function InfoScreen() {
                 <Card style={styles.infoCard}>
                     <Card.Content>
                         <View style={styles.cardHeader}>
-                            <Icon name="contact-phone" size={22} color="#0275d8" />
+                            <Icon name="phone-classic" size={22} color="#0275d8" />
                             <Text style={styles.infoTitle}>Contact Information</Text>
                         </View>
                         <Divider style={styles.divider} />

@@ -22,6 +22,7 @@ import auth from '@react-native-firebase/auth';
 import storage from '@react-native-firebase/storage';
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from 'expo-file-system';
+import { CLOUDINARY_URL, CLOUDINARY_UPLOAD_PRESET } from '../../cloudinaryConfig';
 
 
 export default function ConcernsScreen() {
@@ -144,15 +145,9 @@ export default function ConcernsScreen() {
   };
 
   // Fixed: Upload image function with proper error handling
-  const uploadImage = async (imageUri) => {
+  const uploadImageToCloudinary = async (imageUri) => {
     if (!imageUri) {
       console.log("No image URI provided");
-      return null;
-    }
-  
-    const user = auth().currentUser;
-    if (!user) {
-      Alert.alert("Authentication Required", "You must be logged in to upload an image.");
       return null;
     }
   
@@ -162,59 +157,57 @@ export default function ConcernsScreen() {
     try {
       console.log("Starting image upload for URI:", imageUri);
   
-      // Create a unique filename
+      // Create form data for the image
+      const formData = new FormData();
+      
+      // Get the filename from the URI
       const filename = imageUri.substring(imageUri.lastIndexOf("/") + 1);
-      const uniqueFilename = `${user.uid}_${Date.now()}_${filename}`;
-      const storagePath = `concerns/${uniqueFilename}`;
-  
-      console.log("Storage path:", storagePath);
-  
-      // Get the file data as a blob
-      const response = await fetch(imageUri);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.statusText}`);
-      }
-      const blob = await response.blob();
-  
-      console.log("Successfully created blob of size:", blob.size);
-  
-      // Create storage reference
-      const storageRef = storage().ref(storagePath);
-  
-      // Create upload task using put() instead of putFile()
-      const uploadTask = storageRef.put(blob);
-  
-      // Set up upload monitoring
-      return new Promise((resolve, reject) => {
-        uploadTask.on(
-          'state_changed',
-          (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            console.log(`Upload progress: ${progress}%`);
-            setUploadProgress(progress);
-          },
-          (error) => {
-            console.error("Upload error:", error);
-            setIsUploading(false);
-            reject(error);
-          },
-          async () => {
-            // Upload completed successfully
-            console.log("Upload completed successfully");
-            try {
-              // Get the download URL
-              const downloadUrl = await storageRef.getDownloadURL();
-              console.log("Download URL obtained:", downloadUrl);
-              setIsUploading(false);
-              resolve(downloadUrl);
-            } catch (urlError) {
-              console.error("Error getting download URL:", urlError);
-              setIsUploading(false);
-              reject(urlError);
-            }
-          }
-        );
+      
+      // Add the image to form data
+      formData.append('file', {
+        uri: imageUri,
+        type: 'image/jpeg', // You might need to detect the actual mime type
+        name: filename,
       });
+      
+      // Add your upload preset
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      
+      // Optional: Add a folder name for organization
+      formData.append('folder', 'concerns');
+  
+      // Set up progress tracking
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', CLOUDINARY_URL);
+      
+      // Set up progress tracking
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = (event.loaded / event.total) * 100;
+          console.log(`Upload progress: ${progress}%`);
+          setUploadProgress(progress);
+        }
+      };
+  
+      // Wait for the upload to complete
+      const cloudinaryResponse = await new Promise((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            reject(new Error('Upload failed'));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.send(formData);
+      });
+  
+      console.log("Upload completed successfully");
+      setIsUploading(false);
+      
+      // Return the secure URL for the uploaded image
+      return cloudinaryResponse.secure_url;
+      
     } catch (error) {
       console.error("Error in uploadImage function:", error);
       setIsUploading(false);
@@ -223,76 +216,72 @@ export default function ConcernsScreen() {
     }
   };
 
- // Fixed: Submit handler with proper image upload
-const handleSubmit = async () => {
-    if (!title || !description || !location) {
-      Alert.alert("Missing Fields", "Please fill in all fields.");
-      return;
-    }
-  
-    const user = auth().currentUser;
-    if (!user) {
-      Alert.alert("Authentication Required", "You must be logged in to submit a concern.");
-      return;
-    }
-  
-    setIsLoading(true);
-  
-    try {
-      // Upload image if selected
-      let imageUrl = null;
-      if (imageUri) {
-        try {
-          console.log("Starting image upload process...");
-          imageUrl = await uploadImage(imageUri);
-          console.log("Image upload completed, URL:", imageUrl);
-        } catch (uploadError) {
-          console.error("Image upload error:", uploadError);
-          // Ask if user wants to continue without image
-          const shouldContinue = await new Promise((resolve) => {
-            Alert.alert(
-              "Upload Failed",
-              "Would you like to submit your concern without the image?",
-              [
-                {
-                  text: "Cancel",
-                  style: "cancel",
-                  onPress: () => resolve(false),
-                },
-                {
-                  text: "Continue",
-                  onPress: () => resolve(true),
-                },
-              ]
-            );
-          });
-  
-          if (!shouldContinue) {
-            setIsLoading(false);
-            return;
-          }
+ const handleSubmit = async () => {
+  if (!title || !description || !location) {
+    Alert.alert("Missing Fields", "Please fill in all fields.");
+    return;
+  }
+
+  const user = auth().currentUser;
+  if (!user) {
+    Alert.alert("Authentication Required", "You must be logged in to submit a concern.");
+    return;
+  }
+
+  setIsLoading(true);
+
+  try {
+    // Upload image to Cloudinary if selected
+    let imageUrl = null;
+    if (imageUri) {
+      try {
+        console.log("Starting image upload process to Cloudinary...");
+        imageUrl = await uploadImageToCloudinary(imageUri);
+        console.log("Image upload completed, URL:", imageUrl);
+      } catch (uploadError) {
+        console.error("Image upload error:", uploadError);
+        // Ask if user wants to continue without image
+        const shouldContinue = await new Promise((resolve) => {
+          Alert.alert(
+            "Upload Failed",
+            "Would you like to submit your concern without the image?",
+            [
+              {
+                text: "Cancel",
+                style: "cancel",
+                onPress: () => resolve(false),
+              },
+              {
+                text: "Continue",
+                onPress: () => resolve(true),
+              },
+            ]
+          );
+        });
+
+        if (!shouldContinue) {
+          setIsLoading(false);
+          return;
         }
       }
-  
-      console.log("Proceeding to add concern to Firestore");
-  
-      // Add concern to Firestore
-      await submitConcernToFirestore(imageUrl);
-  
-      console.log("Concern added successfully");
-  
-      // Reset form and show success message
-      resetForm();
-      Alert.alert("Success", "Your concern has been recorded.");
-      setShowForm(false);
-      fetchConcerns(); // Refresh the list
-    } catch (error) {
-      console.error("Error adding concern:", error);
-      Alert.alert("Error", "There was an issue submitting your concern: " + error.message);
-    } finally {
-      setIsLoading(false);
     }
-  };
+
+    console.log("Proceeding to add concern to Firestore");
+
+    // The rest of your code remains the same
+    await submitConcernToFirestore(imageUrl);
+    console.log("Concern added successfully");
+    resetForm();
+    Alert.alert("Success", "Your concern has been recorded.");
+    setShowForm(false);
+    fetchConcerns();
+  } catch (error) {
+    console.error("Error adding concern:", error);
+    Alert.alert("Error", "There was an issue submitting your concern: " + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
   
   // Helper function to submit concern data to Firestore
   const submitConcernToFirestore = async (imageUrl) => {

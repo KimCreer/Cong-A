@@ -9,7 +9,7 @@ import Dashboard from "./src/Dashboard";
 import AdminDashboard from "./src/AdminDashboard";
 import ProjectsScreen from "./src/screens/ProjectsScreen";
 import ProjectDetailsScreen from "./src/screens/ProjectDetailsScreen";
-import PinCodeScreen from "./src/screens/PinCodeScreen.js"; // Import the PinCodeScreen
+import AppointmentsScreen from "./src/screens/AppointmentsScreen";
 
 const Stack = createStackNavigator();
 
@@ -53,8 +53,8 @@ export default function App() {
                     options={{ headerShown: false }}
                 />
                 <Stack.Screen
-                    name="PinCode"
-                    component={PinCodeScreen}
+                    name="Appointments"
+                    component={AppointmentsScreen}
                     options={{ headerShown: false }}
                 />
             </Stack.Navigator>

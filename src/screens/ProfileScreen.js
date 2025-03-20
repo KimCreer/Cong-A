@@ -4,8 +4,8 @@ import {
     Image, Alert, ScrollView, Platform, ActivityIndicator, ImageBackground 
 } from "react-native";
 import { getAuth, onAuthStateChanged, signOut } from "@react-native-firebase/auth";
-import firestore from "@react-native-firebase/firestore";
-import * as ImagePicker from "expo-image-picker";
+import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, onSnapshot } from '@react-native-firebase/firestore';
+
 import { useNavigation } from "@react-navigation/native";
 import Icon from 'react-native-vector-icons/FontAwesome';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
@@ -25,6 +25,8 @@ export default function ProfileScreen() {
     const [showAllSections, setShowAllSections] = useState(false);
     const [pictureChanged, setPictureChanged] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const db = getFirestore();
+
 
     const navigation = useNavigation();
 
@@ -42,8 +44,9 @@ export default function ProfileScreen() {
         const unsubscribe = onAuthStateChanged(authInstance, async (currentUser) => {
             if (currentUser) {
                 try {
-                    const userRef = firestore().collection("users").doc(currentUser.uid);
-                    const userDoc = await userRef.get();
+                    const db = getFirestore();
+                    const userRef = doc(db, "users", currentUser.uid);
+                    const userDoc = await getDoc(userRef);
 
                     if (userDoc.exists) {
                         let userData = userDoc.data();
@@ -78,7 +81,8 @@ export default function ProfileScreen() {
                             Relationship: "",
                         };
 
-                        await userRef.set(newUser);
+                        await setDoc(userRef, newUser);
+
                         setUser(newUser);
                         setUpdatedUser(newUser);
                     }
@@ -272,7 +276,7 @@ export default function ProfileScreen() {
                     setIsLoading(false);
                 }
                 
-                await firestore().collection("users").doc(currentUser.uid).update(updatedUser);
+                await updateDoc(doc(db, "users", currentUser.uid), updatedUser);
                 setUser(updatedUser);
                 setPictureChanged(false);
                 Alert.alert("Profile Updated", "Your profile has been successfully updated.");

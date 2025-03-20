@@ -2,8 +2,8 @@ import React, { useState, useEffect } from "react";
 import { View, Text, Alert, StyleSheet, Dimensions, Image } from "react-native";
 import { TextInput, Button, ActivityIndicator } from "react-native-paper";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import auth from "@react-native-firebase/auth";
-import firestore from "@react-native-firebase/firestore";
+import { getAuth, signInWithPhoneNumber } from "@react-native-firebase/auth";
+import { getFirestore, collection, query, where, getDocs, doc, getDoc } from "@react-native-firebase/firestore";
 import { useNavigation } from "@react-navigation/native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
@@ -15,6 +15,10 @@ export default function Login() {
     const [confirm, setConfirm] = useState(null);
     const [loading, setLoading] = useState(false);
     const navigation = useNavigation();
+    
+    // Initialize Firebase services
+    const auth = getAuth();
+    const firestore = getFirestore();
 
     useEffect(() => {
         checkIfFirstLaunch();
@@ -36,43 +40,39 @@ export default function Login() {
         return `+1${number}`; // Add country code +1
     };
 
-    const signInWithPhoneNumber = async () => {
+    const signInWithPhoneNumberHandler = async () => {
         if (!phoneNumber.trim() || phoneNumber.length < 10) {
             Alert.alert("Error", "Please enter a valid phone number.");
             return;
         }
 
-        const formattedPhone = formatPhoneNumber(phoneNumber); // Format phone number
+        const formattedPhone = formatPhoneNumber(phoneNumber);
 
         try {
             setLoading(true);
 
             // Check in "admins" collection
-            const adminQuery = await firestore()
-                .collection("admins")
-                .where("phone", "==", formattedPhone)
-                .get();
+            const adminRef = collection(firestore, "admins");
+            const adminSnapshot = await getDocs(query(adminRef, where("phone", "==", formattedPhone)));
 
-            if (!adminQuery.empty) {
+            if (!adminSnapshot.empty) {
                 Alert.alert("Welcome!", "Logging in as Admin...");
                 navigation.navigate("AdminDashboard");
                 return;
             }
 
             // Check in "users" collection
-            const userQuery = await firestore()
-                .collection("users")
-                .where("phoneNumber", "==", formattedPhone)
-                .get();
+            const userRef = collection(firestore, "users");
+            const userSnapshot = await getDocs(query(userRef, where("phoneNumber", "==", formattedPhone)));
 
-            if (!userQuery.empty) {
+            if (!userSnapshot.empty) {
                 Alert.alert("Welcome!", "Logging in as User...");
                 navigation.navigate("Dashboard");
                 return;
             }
 
             // If not found, send OTP
-            const confirmation = await auth().signInWithPhoneNumber(formattedPhone);
+            const confirmation = await signInWithPhoneNumber(auth, formattedPhone);
             setConfirm(confirmation);
         } catch (error) {
             Alert.alert("Error", "Failed to check user data. Please try again.");
@@ -91,9 +91,12 @@ export default function Login() {
             setLoading(true);
             const userCredential = await confirm.confirm(code);
             const user = userCredential.user;
-
+    
             // Check user role
-            const userDocument = await firestore().collection("users").doc(user.uid).get();
+            const userDocRef = doc(firestore, "users", user.uid);
+            const userDocument = await getDoc(userDocRef);
+            
+            // Use exists property correctly
             if (userDocument.exists) {
                 const userData = userDocument.data();
                 navigation.navigate(userData.role === "admin" ? "AdminDashboard" : "Dashboard");
@@ -107,7 +110,6 @@ export default function Login() {
             setLoading(false);
         }
     };
-
     const skipLogin = () => {
         navigation.navigate("Dashboard");
     };
@@ -140,7 +142,7 @@ export default function Login() {
 
             <Button
                 mode="contained"
-                onPress={!confirm ? signInWithPhoneNumber : confirmCode}
+                onPress={!confirm ? signInWithPhoneNumberHandler : confirmCode}
                 style={[styles.button, loading && styles.buttonDisabled]}
                 labelStyle={styles.buttonText}
                 disabled={loading}
@@ -159,7 +161,6 @@ export default function Login() {
         </View>
     );
 }
-
 
 const styles = StyleSheet.create({
     container: {

@@ -21,8 +21,21 @@ import { createStackNavigator } from "@react-navigation/stack";
 import { useNavigation } from "@react-navigation/native";
 import { FontAwesome5 } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import auth from "@react-native-firebase/auth";
-import firestore from "@react-native-firebase/firestore";
+
+// Updated Firebase imports to use modular API
+import { getAuth } from "@react-native-firebase/auth";
+import { 
+    getFirestore, 
+    collection, 
+    doc, 
+    getDoc, 
+    getDocs, 
+    addDoc, 
+    query, 
+    where, 
+    orderBy, 
+    limit 
+} from "@react-native-firebase/firestore";
 
 // Import screens
 import LawsScreen from "./screens/LawsScreen";
@@ -119,7 +132,10 @@ const NewsCard = ({ item, onPress }) => (
             style={styles.newsImage}
         />
         <View style={styles.newsContent}>
-            <Text style={styles.newsTitle}>{item.title}</Text>
+            <View style={styles.newsTitleContainer}>
+                <Text style={styles.newsTitle}>{item.title}</Text>
+                {!item.read && <View style={styles.unreadIndicator} />}
+            </View>
             <Text style={styles.newsDesc}>{item.description}</Text>
             <Text style={styles.newsDate}>{item.date}</Text>
         </View>
@@ -431,30 +447,38 @@ function HomeScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [appointmentModalVisible, setAppointmentModalVisible] = useState(false);
     const [upcomingAppointments, setUpcomingAppointments] = useState([]);
+    const [newsItems, setNewsItems] = useState([]);
 
     const fetchUserData = useCallback(async () => {
         setLoading(true);
-        const currentUser = auth().currentUser;
+        const auth = getAuth();
+        const currentUser = auth.currentUser;
+        const db = getFirestore();
 
         if (currentUser) {
             try {
-                const userDoc = await firestore().collection("users").doc(currentUser.uid).get();
-                if (userDoc.exists) {
-                    const userInfo = userDoc.data();
+                // Updated query for user data
+                const userDocRef = doc(db, "users", currentUser.uid);
+                const userDocSnapshot = await getDoc(userDocRef);
+                
+                if (userDocSnapshot.exists) {
+                    const userInfo = userDocSnapshot.data();
                     setUserData({
                         firstName: userInfo.firstName || "User Name",
                         profileImage: userInfo.profilePicture?.trim() ? userInfo.profilePicture : PLACEHOLDER_IMAGE,
                     });
                 }
                 
-                // Fetch upcoming appointments
-                const appointmentsSnapshot = await firestore()
-                    .collection("appointments")
-                    .where("userId", "==", currentUser.uid)
-                    .where("date", ">=", new Date().toISOString())
-                    .orderBy("date", "asc")
-                    .limit(2)
-                    .get();
+                // Updated query for upcoming appointments
+                const appointmentsQuery = query(
+                    collection(db, "appointments"),
+                    where("userId", "==", currentUser.uid),
+                    where("date", ">=", new Date().toISOString()),
+                    orderBy("date", "asc"),
+                    limit(2)
+                );
+                
+                const appointmentsSnapshot = await getDocs(appointmentsQuery);
                 
                 const appointments = [];
                 appointmentsSnapshot.forEach(doc => {
@@ -462,8 +486,36 @@ function HomeScreen() {
                 });
                 
                 setUpcomingAppointments(appointments);
+
+                // Fetch updates from Firestore
+                const updatesQuery = query(
+                    collection(db, "updates"),
+                    orderBy("timestamp", "desc"),
+                    limit(5)
+                );
+                
+                const updatesSnapshot = await getDocs(updatesQuery);
+                
+                const updates = [];
+                updatesSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    updates.push({
+                        id: doc.id,
+                        title: data.title,
+                        description: data.description,
+                        date: new Date(data.timestamp).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                        }),
+                        image: data.image || "https://via.placeholder.com/300x150",
+                        read: data.read || false
+                    });
+                });
+                
+                setNewsItems(updates);
             } catch (error) {
-                console.error("Error fetching user data:", error);
+                console.error("Error fetching data:", error);
             }
         }
 
@@ -492,14 +544,16 @@ function HomeScreen() {
     };
     
     const handleSubmitAppointment = async (appointmentData) => {
-        const currentUser = auth().currentUser;
+        const auth = getAuth();
+        const currentUser = auth.currentUser;
+        const db = getFirestore();
         
         if (currentUser) {
             try {
                 setLoading(true);
                 
-                // Add appointment to Firestore
-                await firestore().collection("appointments").add({
+                // Updated query to add appointment to Firestore
+                await addDoc(collection(db, "appointments"), {
                     ...appointmentData,
                     userId: currentUser.uid,
                 });
@@ -580,15 +634,56 @@ function HomeScreen() {
     const renderNewsSection = () => (
         <>
             <Text style={styles.sectionTitle}>Latest Updates</Text>
-            {NEWS_ITEMS.map(item => (
-                <NewsCard 
-                    key={item.id} 
-                    item={item} 
-                    onPress={() => navigateToScreen("Updates")} 
-                />
-            ))}
+            {newsItems.length > 0 ? (
+                newsItems.map(item => (
+                    <NewsCard 
+                        key={item.id} 
+                        item={item} 
+                        onPress={() => {
+                            // Mark the update as read in Firestore
+                            if (!item.read) {
+                                markUpdateAsRead(item.id);
+                            }
+                            navigation.navigate("Updates", { updateId: item.id });
+                        }} 
+                    />
+                ))
+            ) : (
+                <View style={styles.noUpdatesContainer}>
+                    <FontAwesome5 name="newspaper" size={30} color="#cccccc" />
+                    <Text style={styles.noUpdatesText}>No updates available</Text>
+                </View>
+            )}
+            
+            <TouchableOpacity
+                style={styles.viewAllUpdatesButton}
+                onPress={() => navigateToScreen("Updates")}
+            >
+                <Text style={styles.viewAllUpdatesText}>View All Updates</Text>
+                <FontAwesome5 name="arrow-right" size={14} color="#003580" />
+            </TouchableOpacity>
         </>
     );
+
+    // Function to mark an update as read
+    const markUpdateAsRead = async (updateId) => {
+        try {
+            const db = getFirestore();
+            const updateRef = doc(db, "updates", updateId);
+            await updateDoc(updateRef, {
+                read: true
+            });
+            
+            // Update local state
+            setNewsItems(prev => 
+                prev.map(item => 
+                    item.id === updateId ? { ...item, read: true } : item
+                )
+            );
+        } catch (error) {
+            console.error("Error marking update as read:", error);
+        }
+    };
 
     if (loading && !refreshing) {
         return (
@@ -1221,5 +1316,45 @@ const styles = StyleSheet.create({
         elevation: 8,
         height: 60,
         paddingBottom: 5,
+    },
+    noUpdatesContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+        backgroundColor: '#f9f9f9',
+        borderRadius: 8,
+        marginBottom: 15,
+    },
+    noUpdatesText: {
+        marginTop: 10,
+        color: '#666666',
+        fontSize: 16,
+    },
+    viewAllUpdatesButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 12,
+        backgroundColor: '#f0f0f0',
+        borderRadius: 8,
+        marginTop: 5,
+        marginBottom: 20,
+    },
+    viewAllUpdatesText: {
+        color: '#003580',
+        fontWeight: '600',
+        marginRight: 8,
+    },
+    newsTitleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    unreadIndicator: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#FF9800',
+        marginLeft: 8,
     },
 });

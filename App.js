@@ -10,6 +10,9 @@ import AdminDashboard from "./src/AdminDashboard";
 import ProjectsScreen from "./src/screens/ProjectsScreen";
 import ProjectDetailsScreen from "./src/screens/ProjectDetailsScreen";
 import AppointmentsScreen from "./src/screens/AppointmentsScreen";
+import SetupPin from "./src/SetupPin";
+import ConcernsScreen from "./src/screens/ConcernsScreen"; // Import ConcernsScreen
+import ImageViewerScreen from "./src/screens/ImageViewerScreen"; // Import ImageViewerScreen
 
 const Stack = createStackNavigator();
 
@@ -25,6 +28,11 @@ export default function App() {
                 <Stack.Screen
                     name="Login"
                     component={Login}
+                    options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                    name="SetupPin"
+                    component={SetupPin}
                     options={{ headerShown: false }}
                 />
                 <Stack.Screen
@@ -55,6 +63,18 @@ export default function App() {
                 <Stack.Screen
                     name="Appointments"
                     component={AppointmentsScreen}
+                    options={{ headerShown: false }}
+                />
+                {/* Add ConcernsScreen to the navigation stack */}
+                <Stack.Screen
+                    name="Concerns"
+                    component={ConcernsScreen}
+                    options={{ headerShown: false }}
+                />
+                {/* Add ImageViewerScreen to the navigation stack */}
+                <Stack.Screen
+                    name="ImageViewer"
+                    component={ImageViewerScreen}
                     options={{ headerShown: false }}
                 />
             </Stack.Navigator>

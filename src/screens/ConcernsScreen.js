@@ -1,3 +1,4 @@
+// ConcernsScreen.js
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -17,13 +18,11 @@ import {
 import { Card, Menu, Divider, Provider, FAB, Chip } from "react-native-paper";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useNavigation } from "@react-navigation/native";
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
-import storage from '@react-native-firebase/storage';
+import { initializeApp, getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, query, where, orderBy, serverTimestamp, getDocs, addDoc } from '@react-native-firebase/firestore';
+import { getAuth } from '@react-native-firebase/auth';
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from 'expo-file-system';
 import { CLOUDINARY_URL, CLOUDINARY_UPLOAD_PRESET } from '../../cloudinaryConfig';
-
 
 export default function ConcernsScreen() {
   const navigation = useNavigation();
@@ -39,6 +38,9 @@ export default function ConcernsScreen() {
   const [imageUri, setImageUri] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const app = getApp();
+  const db = getFirestore(app);
+  const firebaseAuth = getAuth(app);
 
   // Request permission for camera and media library
   useEffect(() => {
@@ -60,20 +62,24 @@ export default function ConcernsScreen() {
   // Fetch concerns from Firestore
   const fetchConcerns = async () => {
     setIsFetching(true);
-    const user = auth().currentUser;
+    const user = firebaseAuth.currentUser;
     if (!user) {
       Alert.alert("Authentication Required", "You must be logged in to view concerns.");
       setIsFetching(false);
       return;
     }
-
+  
     try {
-      const snapshot = await firestore()
-        .collection('concerns')
-        .where('userId', '==', user.uid)
-        .orderBy('createdAt', 'desc')
-        .get();
-
+      const concernsRef = collection(db, 'concerns');
+      const q = query(
+        concernsRef,
+        where('userId', '==', user.uid),
+        orderBy('createdAt', 'desc')
+      );
+      
+      // Use the get() method on the query object
+      const snapshot = await q.get();
+  
       const concernsList = [];
       snapshot.forEach((doc) => {
         concernsList.push({
@@ -216,81 +222,82 @@ export default function ConcernsScreen() {
     }
   };
 
- const handleSubmit = async () => {
-  if (!title || !description || !location) {
-    Alert.alert("Missing Fields", "Please fill in all fields.");
-    return;
-  }
-
-  const user = auth().currentUser;
-  if (!user) {
-    Alert.alert("Authentication Required", "You must be logged in to submit a concern.");
-    return;
-  }
-
-  setIsLoading(true);
-
-  try {
-    // Upload image to Cloudinary if selected
-    let imageUrl = null;
-    if (imageUri) {
-      try {
-        console.log("Starting image upload process to Cloudinary...");
-        imageUrl = await uploadImageToCloudinary(imageUri);
-        console.log("Image upload completed, URL:", imageUrl);
-      } catch (uploadError) {
-        console.error("Image upload error:", uploadError);
-        // Ask if user wants to continue without image
-        const shouldContinue = await new Promise((resolve) => {
-          Alert.alert(
-            "Upload Failed",
-            "Would you like to submit your concern without the image?",
-            [
-              {
-                text: "Cancel",
-                style: "cancel",
-                onPress: () => resolve(false),
-              },
-              {
-                text: "Continue",
-                onPress: () => resolve(true),
-              },
-            ]
-          );
-        });
-
-        if (!shouldContinue) {
-          setIsLoading(false);
-          return;
-        }
-      }
+  const handleSubmit = async () => {
+    if (!title || !description || !location) {
+      Alert.alert("Missing Fields", "Please fill in all fields.");
+      return;
     }
 
-    console.log("Proceeding to add concern to Firestore");
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      Alert.alert("Authentication Required", "You must be logged in to submit a concern.");
+      return;
+    }
 
-    // The rest of your code remains the same
-    await submitConcernToFirestore(imageUrl);
-    console.log("Concern added successfully");
-    resetForm();
-    Alert.alert("Success", "Your concern has been recorded.");
-    setShowForm(false);
-    fetchConcerns();
-  } catch (error) {
-    console.error("Error adding concern:", error);
-    Alert.alert("Error", "There was an issue submitting your concern: " + error.message);
-  } finally {
-    setIsLoading(false);
-  }
-};
-  
+    setIsLoading(true);
+
+    try {
+      // Upload image to Cloudinary if selected
+      let imageUrl = null;
+      if (imageUri) {
+        try {
+          console.log("Starting image upload process to Cloudinary...");
+          imageUrl = await uploadImageToCloudinary(imageUri);
+          console.log("Image upload completed, URL:", imageUrl);
+        } catch (uploadError) {
+          console.error("Image upload error:", uploadError);
+          // Ask if user wants to continue without image
+          const shouldContinue = await new Promise((resolve) => {
+            Alert.alert(
+              "Upload Failed",
+              "Would you like to submit your concern without the image?",
+              [
+                {
+                  text: "Cancel",
+                  style: "cancel",
+                  onPress: () => resolve(false),
+                },
+                {
+                  text: "Continue",
+                  onPress: () => resolve(true),
+                },
+              ]
+            );
+          });
+
+          if (!shouldContinue) {
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+
+      console.log("Proceeding to add concern to Firestore");
+
+      // The rest of your code remains the same
+      await submitConcernToFirestore(imageUrl);
+      console.log("Concern added successfully");
+      resetForm();
+      Alert.alert("Success", "Your concern has been recorded.");
+      setShowForm(false);
+      fetchConcerns();
+    } catch (error) {
+      console.error("Error adding concern:", error);
+      Alert.alert("Error", "There was an issue submitting your concern: " + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+    
   // Helper function to submit concern data to Firestore
   const submitConcernToFirestore = async (imageUrl) => {
-    const user = auth().currentUser;
+    const user = firebaseAuth.currentUser;
     if (!user) {
       throw new Error("User not authenticated.");
     }
-  
-    await firestore().collection('concerns').add({
+
+    const concernsRef = collection(db, 'concerns');
+    await addDoc(concernsRef, {
       title,
       description,
       location,
@@ -299,10 +306,10 @@ export default function ConcernsScreen() {
       userId: user.uid,
       userEmail: user.email,
       imageUrl,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   };
-  
+    
   // Helper function to reset the form
   const resetForm = () => {
     setTitle("");
@@ -545,7 +552,7 @@ export default function ConcernsScreen() {
                     {concern.imageUrl && (
                       <TouchableOpacity 
                         onPress={() => {
-                          // You can add navigation to a full-screen image viewer here
+                          // Navigate to the ImageViewer screen
                           navigation.navigate('ImageViewer', { imageUrl: concern.imageUrl });
                         }}
                       >

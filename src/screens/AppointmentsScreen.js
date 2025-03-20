@@ -13,8 +13,8 @@ import {
   Modal,
 } from "react-native";
 import { FontAwesome5 } from "@expo/vector-icons";
-import auth from "@react-native-firebase/auth";
-import firestore from "@react-native-firebase/firestore";
+import { getAuth } from "@react-native-firebase/auth";
+import { getFirestore, collection, query, where, orderBy, getDocs, addDoc, doc, updateDoc } from "@react-native-firebase/firestore";
 import { useFocusEffect } from "@react-navigation/native";
 
 // Import the appointment form component
@@ -30,21 +30,27 @@ export default function AppointmentsScreen({ navigation }) {
 
   // Fetch appointments from Firestore
   const fetchAppointments = useCallback(async () => {
-    const currentUser = auth().currentUser;
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
     if (!currentUser) {
       setLoading(false);
       setRefreshing(false);
       return;
     }
-
+  
     try {
       setLoading(true);
-      const appointmentsSnapshot = await firestore()
-        .collection("appointments")
-        .where("userId", "==", currentUser.uid)
-        .orderBy("date", "desc")
-        .get();
+      const db = getFirestore(); // You need to import getFirestore
 
+      const appointmentsRef = collection(db, "appointments");
+      const appointmentsQuery = query(
+        appointmentsRef,
+        where("userId", "==", currentUser.uid),
+        orderBy("date", "desc")
+      );
+      
+      const appointmentsSnapshot = await getDocs(appointmentsQuery);
+  
       const appointmentsData = [];
       appointmentsSnapshot.forEach(doc => {
         appointmentsData.push({
@@ -93,12 +99,16 @@ export default function AppointmentsScreen({ navigation }) {
 
   // Handle appointment submission
   const handleSubmitAppointment = async (appointmentData) => {
-    const currentUser = auth().currentUser;
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
     if (!currentUser) return;
-
+  
     try {
       setLoading(true);
-      await firestore().collection("appointments").add({
+      const db = getFirestore(); // You need to import getFirestore
+
+      const appointmentsRef = collection(db, "appointments");
+      await addDoc(appointmentsRef, {
         ...appointmentData,
         userId: currentUser.uid,
       });
@@ -130,7 +140,10 @@ export default function AppointmentsScreen({ navigation }) {
           onPress: async () => {
             try {
               setLoading(true);
-              await firestore().collection("appointments").doc(appointment.id).update({
+              const db = getFirestore(); // You need to import getFirestore
+
+              const appointmentRef = doc(db, "appointments", appointment.id);
+              await updateDoc(appointmentRef, {
                 status: "Cancelled",
                 cancelledAt: new Date().toISOString(),
               });
